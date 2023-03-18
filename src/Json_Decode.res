@@ -55,149 +55,134 @@ let string = (. json) => {
   Obj.magic(json)
 }
 
-let array = (decode) => (. json) => {
-  if !Js.Array.isArray(json) {
-    Error.expected("array", json)
-  }
-
-  let source: array<Js.Json.t> = Obj.magic(json)
-  let target = %raw("new Array(json.length)")
-
-  for i in 0 to Array.length(source) - 1 {
-    try {
-      let value = decode(. %raw("json[i]"))
-      target->Array.unsafe_set(i, value)
-    } catch {
-    | DecodeError(msg) => raise(DecodeError(`${msg}\n\tin array at index $i`))
+let array = decode => {
+  (. json) => {
+    if !Js.Array.isArray(json) {
+      Error.expected("array", json)
     }
-  }
 
-  target
+    let source: array<Js.Json.t> = Obj.magic(json)
+    let target = %raw("new Array(json.length)")
+
+    for i in 0 to Array.length(source) - 1 {
+      try {
+        let value = decode(. %raw("json[i]"))
+        target->Array.unsafe_set(i, value)
+      } catch {
+      | DecodeError(msg) => raise(DecodeError(`${msg}\n\tin array at index $i`))
+      }
+    }
+
+    target
+  }
 }
 
-let list = (decode) => (. json) => array(decode)(. json)->Array.to_list
+let list = decode => {(. json) => array(decode)(. json)->Array.to_list}
 
-let option = decode => (. json) => {
-  if Obj.magic(json) == Js.null {
-    None
-  } else {
-    Some(decode(. json))
+let option = decode => {
+  (. json) => {
+    if Obj.magic(json) == Js.null {
+      None
+    } else {
+      Some(decode(. json))
+    }
   }
 }
 
 let date = (. json) => string(. json)->Js.Date.fromString
 
-let tuple2 = (decodeA, decodeB) => (. json) => {
-  if !Js.Array.isArray(json) {
-    Error.expected("array", json)
-  }
+let tuple2 = (decodeA, decodeB) => {
+  (. json) => {
+    if !Js.Array.isArray(json) {
+      Error.expected("array", json)
+    }
 
-  let arr: array<Js.Json.t> = Obj.magic(json)
-  if Array.length(arr) != 2 {
-    raise(
-      DecodeError(
-        `Expected array of length 2, got array of length ${Array.length(arr)->string_of_int}`,
-      ),
-    )
-  }
+    let arr: array<Js.Json.t> = Obj.magic(json)
+    if Array.length(arr) != 2 {
+      raise(
+        DecodeError(
+          `Expected array of length 2, got array of length ${Array.length(arr)->string_of_int}`,
+        ),
+      )
+    }
 
-  try (decodeA(. arr->Array.unsafe_get(0)), decodeB(. arr->Array.unsafe_get(1))) catch {
-  | DecodeError(msg) => raise(DecodeError(`${msg}\n\tin pair`))
+    try (decodeA(. arr->Array.unsafe_get(0)), decodeB(. arr->Array.unsafe_get(1))) catch {
+    | DecodeError(msg) => raise(DecodeError(`${msg}\n\tin pair`))
+    }
   }
 }
 let pair = tuple2
 
-let tuple3 = (decodeA, decodeB, decodeC) => (. json) => {
-  if !Js.Array.isArray(json) {
-    Error.expected("array", json)
-  }
+let tuple3 = (decodeA, decodeB, decodeC) => {
+  (. json) => {
+    if !Js.Array.isArray(json) {
+      Error.expected("array", json)
+    }
 
-  let arr: array<Js.Json.t> = Obj.magic(json)
-  if Array.length(arr) != 3 {
-    raise(
-      DecodeError(
-        `Expected array of length 3, got array of length ${Array.length(arr)->string_of_int}`,
-      ),
-    )
-  }
+    let arr: array<Js.Json.t> = Obj.magic(json)
+    if Array.length(arr) != 3 {
+      raise(
+        DecodeError(
+          `Expected array of length 3, got array of length ${Array.length(arr)->string_of_int}`,
+        ),
+      )
+    }
 
-  try (
-    decodeA(. arr->Array.unsafe_get(0)),
-    decodeB(. arr->Array.unsafe_get(1)),
-    decodeC(. arr->Array.unsafe_get(2)),
-  ) catch {
-  | DecodeError(msg) => raise(DecodeError(`${msg}\n\tin pair`))
-  }
-}
-
-let tuple4 = (decodeA, decodeB, decodeC, decodeD) => (. json) => {
-  if !Js.Array.isArray(json) {
-    Error.expected("array", json)
-  }
-
-  let arr: array<Js.Json.t> = Obj.magic(json)
-  if Array.length(arr) != 4 {
-    raise(
-      DecodeError(
-        `Expected array of length 4, got array of length ${Array.length(arr)->string_of_int}`,
-      ),
-    )
-  }
-
-  try (
-    decodeA(. arr->Array.unsafe_get(0)),
-    decodeB(. arr->Array.unsafe_get(1)),
-    decodeC(. arr->Array.unsafe_get(2)),
-    decodeD(. arr->Array.unsafe_get(3)),
-  ) catch {
-  | DecodeError(msg) => raise(DecodeError(`${msg}\n\tin pair`))
-  }
-}
-
-let dict = decode => (. json) => {
-  if Js.typeof(json) != "object" || Js.Array.isArray(json) || Obj.magic(json) == Js.null {
-    Error.expected("object", json)
-  }
-
-  let source: Js.Dict.t<Js.Json.t> = Obj.magic(json)
-  try Js.Dict.map(decode, source)->Obj.magic catch {
-  | DecodeError(msg) => raise(DecodeError(`${msg}\n\tin dict'`))
-  }
-}
-
-let field = (key, decode) => (. json) => {
-  if Js.typeof(json) != "object" || Js.Array.isArray(json) || Obj.magic(json) == Js.null {
-    Error.expected("object", json)
-  }
-
-  if !(%raw("key in json")) {
-    raise(DecodeError(`${key} required`))
-  }
-
-  try decode(. %raw("json[key]")) catch {
-  | DecodeError(msg) => raise(DecodeError(`${msg}\n\tat field '${key}'`))
-  }
-}
-
-let object = f => (. json) => {
-  if Js.typeof(json) != "object" || Js.Array.isArray(json) || Obj.magic(json) == Js.null {
-    raise(Error.expected("object", json))
-  }
-
-  let optional = (. key, decode) => {
-    if !(%raw("key in json")) {
-      None
-    } else {
-      try {
-        let value = decode(. %raw("json[key]"))
-        Some(value)
-      } catch {
-      | DecodeError(msg) => raise(DecodeError(`${msg}\n\tat field '${key}'`))
-      }
+    try (
+      decodeA(. arr->Array.unsafe_get(0)),
+      decodeB(. arr->Array.unsafe_get(1)),
+      decodeC(. arr->Array.unsafe_get(2)),
+    ) catch {
+    | DecodeError(msg) => raise(DecodeError(`${msg}\n\tin pair`))
     }
   }
+}
 
-  let required = (. key, decode) => {
+let tuple4 = (decodeA, decodeB, decodeC, decodeD) => {
+  (. json) => {
+    if !Js.Array.isArray(json) {
+      Error.expected("array", json)
+    }
+
+    let arr: array<Js.Json.t> = Obj.magic(json)
+    if Array.length(arr) != 4 {
+      raise(
+        DecodeError(
+          `Expected array of length 4, got array of length ${Array.length(arr)->string_of_int}`,
+        ),
+      )
+    }
+
+    try (
+      decodeA(. arr->Array.unsafe_get(0)),
+      decodeB(. arr->Array.unsafe_get(1)),
+      decodeC(. arr->Array.unsafe_get(2)),
+      decodeD(. arr->Array.unsafe_get(3)),
+    ) catch {
+    | DecodeError(msg) => raise(DecodeError(`${msg}\n\tin pair`))
+    }
+  }
+}
+
+let dict = decode => {
+  (. json) => {
+    if Js.typeof(json) != "object" || Js.Array.isArray(json) || Obj.magic(json) == Js.null {
+      Error.expected("object", json)
+    }
+
+    let source: Js.Dict.t<Js.Json.t> = Obj.magic(json)
+    try Js.Dict.map(decode, source)->Obj.magic catch {
+    | DecodeError(msg) => raise(DecodeError(`${msg}\n\tin dict'`))
+    }
+  }
+}
+
+let field = (key, decode) => {
+  (. json) => {
+    if Js.typeof(json) != "object" || Js.Array.isArray(json) || Obj.magic(json) == Js.null {
+      Error.expected("object", json)
+    }
+
     if !(%raw("key in json")) {
       raise(DecodeError(`${key} required`))
     }
@@ -206,33 +191,66 @@ let object = f => (. json) => {
     | DecodeError(msg) => raise(DecodeError(`${msg}\n\tat field '${key}'`))
     }
   }
-
-  f({optional: optional, required: required})
 }
 
-let oneOf = decoders => (. json) => {
-  let errors = []
-
-  let rec loop = i => {
-    if i >= Array.length(decoders) {
-      raise(
-        DecodeError(
-          `All decoders given to oneOf failed. Here are all the errors:\n- ${errors->Js.Array2.joinWith(
-              "\n",
-            )}\nAnd the JSON being decoded: ${stringify(json)}`,
-        ),
-      )
+let object = f => {
+  (. json) => {
+    if Js.typeof(json) != "object" || Js.Array.isArray(json) || Obj.magic(json) == Js.null {
+      raise(Error.expected("object", json))
     }
 
-    let decode = Array.unsafe_get(decoders, i)
-    try decode(. json) catch {
-    | DecodeError(err) =>
-      errors->Js.Array2.push(err)->ignore
-      loop(i + 1)
+    let optional = (. key, decode) => {
+      if !(%raw("key in json")) {
+        None
+      } else {
+        try {
+          let value = decode(. %raw("json[key]"))
+          Some(value)
+        } catch {
+        | DecodeError(msg) => raise(DecodeError(`${msg}\n\tat field '${key}'`))
+        }
+      }
     }
+
+    let required = (. key, decode) => {
+      if !(%raw("key in json")) {
+        raise(DecodeError(`${key} required`))
+      }
+
+      try decode(. %raw("json[key]")) catch {
+      | DecodeError(msg) => raise(DecodeError(`${msg}\n\tat field '${key}'`))
+      }
+    }
+
+    f({optional, required})
   }
+}
 
-  loop(0)
+let oneOf = decoders => {
+  (. json) => {
+    let errors = []
+
+    let rec loop = i => {
+      if i >= Array.length(decoders) {
+        raise(
+          DecodeError(
+            `All decoders given to oneOf failed. Here are all the errors:\n- ${errors->Js.Array2.joinWith(
+                "\n",
+              )}\nAnd the JSON being decoded: ${stringify(json)}`,
+          ),
+        )
+      }
+
+      let decode = Array.unsafe_get(decoders, i)
+      try decode(. json) catch {
+      | DecodeError(err) =>
+        errors->Js.Array2.push(err)->ignore
+        loop(i + 1)
+      }
+    }
+
+    loop(0)
+  }
 }
 
 let map = (decode, f) => (. json) => f(. decode(. json))
